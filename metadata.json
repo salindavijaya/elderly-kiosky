@@ -1,0 +1,6 @@
+{
+  "name": "Elderly Kiosk",
+  "description": "Foundational Kiosk Launcher for elderly-accessible devices with lockdown, immersive mode, and call state monitoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
