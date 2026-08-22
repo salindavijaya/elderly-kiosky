@@ -7,6 +7,8 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
@@ -36,6 +38,12 @@ class YouTubePlayerManager(private val context: Context) {
     // Default Sinhala Buddhist Bana & Pirith Presets
     const val PRESET_MAHA_PIRITHA_ID = "jNQXAC9IVRw" // Example fallback / Buddhist Pirith ID
     const val PRESET_BANA_ID = "dQw4w9WgXcQ"
+
+    private val FALLBACK_VIDEO_IDS = listOf(
+      PRESET_MAHA_PIRITHA_ID,
+      PRESET_BANA_ID,
+      "2Vv-BfVoq4g"
+    )
   }
 
   private var webView: WebView? = null
@@ -53,12 +61,15 @@ class YouTubePlayerManager(private val context: Context) {
   private var hasAudioFocus = false
   private var isPlaybackPausedDueToFocus = false
   private var audioFocusRequest: AudioFocusRequest? = null
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private var fallbackIndex = 0
 
   private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
     when (focusChange) {
       AudioManager.AUDIOFOCUS_LOSS -> {
-        Log.d(TAG, "Audio focus lost. Stopping YouTube video.")
-        stop()
+        Log.d(TAG, "Audio focus lost. Pausing YouTube video without closing viewer.")
+        isPlaybackPausedDueToFocus = true
+        pauseVideo()
       }
       AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
         Log.d(TAG, "Audio focus lost transiently (call). Pausing YouTube player.")
@@ -71,7 +82,7 @@ class YouTubePlayerManager(private val context: Context) {
       }
       AudioManager.AUDIOFOCUS_GAIN -> {
         Log.d(TAG, "Audio focus regained. Restoring video volume & playback.")
-        setVolume(100)
+        setVolume(settings.defaultVolume)
         if (isPlaybackPausedDueToFocus) {
           isPlaybackPausedDueToFocus = false
           playVideo()
@@ -147,6 +158,7 @@ class YouTubePlayerManager(private val context: Context) {
   fun loadVideo(videoIdOrUrl: String, title: String? = null) {
     val cleanVideoId = extractVideoId(videoIdOrUrl)
     Log.d(TAG, "loadVideo() called for videoId: $cleanVideoId")
+    fallbackIndex = 0
 
     if (!requestAudioFocus()) {
       Log.w(TAG, "Audio focus request failed before loading YouTube video.")
@@ -213,6 +225,7 @@ class YouTubePlayerManager(private val context: Context) {
     }
 
     abandonAudioFocus()
+    fallbackIndex = 0
     _playerState.value = YouTubePlayerState(
       isPlaying = false,
       currentVideoId = null,
@@ -389,8 +402,42 @@ class YouTubePlayerManager(private val context: Context) {
       Log.e(TAG, "YouTube JS Bridge: Error code -> $errorCode")
       _playerState.value = _playerState.value.copy(
         isPlaying = false,
-        errorMessage = "YouTube Player error code $errorCode"
+        errorMessage = null
       )
+      mainHandler.post { loadFallbackVideo(errorCode) }
     }
+  }
+
+  private fun loadFallbackVideo(errorCode: Int) {
+    if (_playerState.value.currentVideoId == null || fallbackIndex >= FALLBACK_VIDEO_IDS.size) {
+      _playerState.value = _playerState.value.copy(
+        isLoading = false,
+        errorMessage = "No playable recommendation is available right now."
+      )
+      return
+    }
+
+    val fallbackId = FALLBACK_VIDEO_IDS[fallbackIndex++]
+    if (fallbackId == _playerState.value.currentVideoId) {
+      loadFallbackVideo(errorCode)
+      return
+    }
+
+    Log.w(TAG, "Video unavailable (error $errorCode); loading recommendation $fallbackId")
+    val currentTitle = _playerState.value.videoTitle
+    _playerState.value = _playerState.value.copy(
+      currentVideoId = fallbackId,
+      videoTitle = currentTitle ?: "Recommended video",
+      isPlaying = true,
+      isLoading = true,
+      errorMessage = null
+    )
+    createPlayerWebView().loadDataWithBaseURL(
+      "https://www.youtube.com",
+      generateIFrameHtml(fallbackId, settings),
+      "text/html",
+      "UTF-8",
+      null
+    )
   }
 }
