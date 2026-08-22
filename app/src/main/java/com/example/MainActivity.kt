@@ -48,7 +48,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -211,8 +210,6 @@ class MainActivity : ComponentActivity() {
               settingsScope.launch { radioSettingsRepository.reset() }
             },
             youtubeSettings = youtubeSettings,
-            youtubeCatalog = YouTubeCatalog.default,
-            youtubePlayerManager = youtubePlayerManager,
             onSaveYouTubeSettings = { settings ->
               settingsScope.launch {
                 youtubeSettingsRepository.save(settings)
@@ -250,6 +247,18 @@ class MainActivity : ComponentActivity() {
               logKioskEvent("YouTube stopped by user.")
             }
           )
+
+          // Embedded YouTube Fullscreen Video Container Overlay
+          if (youtubeState.currentVideoId != null) {
+            YouTubeVideoOverlay(
+              playerManager = youtubePlayerManager,
+              state = youtubeState,
+              onClose = {
+                youtubePlayerManager.stop()
+                logKioskEvent("Closed YouTube video viewer.")
+              }
+            )
+          }
 
           // Massive Screen-Filling Glowing Sinhala Listening Overlay
           AnimatedVisibility(
@@ -561,24 +570,23 @@ class MainActivity : ComponentActivity() {
    */
   fun fetchYouTubeId(query: String): Pair<String, String> {
     val q = query.lowercase()
-    val item = when {
+    return when {
       q.contains("පිරිත්") || q.contains("pirith") || q.contains("මහා පිරිත්") -> {
-        YouTubeCatalog.default[0]
+        Pair("jNQXAC9IVRw", "මහා පිරිත් දේශනාව")
       }
       q.contains("බණ") || q.contains("bana") || q.contains("ධර්ම") -> {
-        YouTubeCatalog.default[1]
+        Pair("dQw4w9WgXcQ", "සද්ධර්ම දේශනාව")
       }
       q.contains("සින්දු") || q.contains("ගීත") || q.contains("song") -> {
-        YouTubeCatalog.default[2]
+        Pair("2Vv-BfVoq4g", "ශ්‍රී ලංකා සම්භාව්‍ය ගීත")
       }
       else -> {
-        YouTubeVideoItem(
-          videoId = YouTubePlayerManager.PRESET_MAHA_PIRITHA_ID,
-          title = if (query.isNotBlank()) query else YouTubeCatalog.default[0].title
+        Pair(
+          YouTubePlayerManager.PRESET_MAHA_PIRITHA_ID,
+          if (query.isNotBlank()) query else "මහා පිරිත් දේශනාව"
         )
       }
     }
-    return item.videoId to item.title
   }
 
   @Suppress("DEPRECATION", "MissingSuperCall")
@@ -1001,8 +1009,6 @@ fun KioskHomeScreen(
   radioState: RadioPlaybackState,
   radioStations: List<RadioStationPreset> = RadioStationPreset.defaults,
   youtubeState: YouTubePlayerState,
-  youtubeCatalog: List<YouTubeVideoItem> = YouTubeCatalog.default,
-  youtubePlayerManager: YouTubePlayerManager? = null,
   pendingCallTargetName: String? = null,
   pendingCallCountdownSeconds: Int = 0,
   onCancelPendingCall: () -> Unit = {},
@@ -1294,16 +1300,6 @@ fun KioskHomeScreen(
         )
         Spacer(modifier = Modifier.height(10.dp))
       }
-
-      YouTubeVideoWall(
-        videos = youtubeCatalog,
-        activeState = youtubeState,
-        playerManager = youtubePlayerManager,
-        onPlay = onPlayYouTube,
-        onStop = onStopYouTube
-      )
-
-      Spacer(modifier = Modifier.height(10.dp))
 
       // Permission Warning Banner
       if (!permissionsGranted) {
@@ -2188,162 +2184,6 @@ fun RadioMiniPlayerBar(
           Spacer(modifier = Modifier.width(4.dp))
           Text("STOP", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color.White)
         }
-      }
-    }
-  }
-}
-
-@Composable
-fun YouTubeVideoWall(
-  videos: List<YouTubeVideoItem>,
-  activeState: YouTubePlayerState,
-  playerManager: YouTubePlayerManager?,
-  onPlay: (String, String) -> Unit,
-  onStop: () -> Unit
-) {
-  Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .testTag("youtube_video_wall"),
-    verticalArrangement = Arrangement.spacedBy(8.dp)
-  ) {
-    Text(
-      text = "YouTube",
-      color = VibrantTextSecondary,
-      fontSize = 12.sp,
-      fontWeight = FontWeight.Bold,
-      letterSpacing = 1.5.sp,
-      modifier = Modifier.padding(horizontal = 4.dp)
-    )
-
-    if (activeState.currentVideoId != null && playerManager != null) {
-      YouTubeCompactPlayer(
-        playerManager = playerManager,
-        state = activeState,
-        onStop = onStop
-      )
-    }
-
-    LazyColumn(
-      modifier = Modifier
-        .fillMaxWidth()
-        .heightIn(max = 210.dp)
-        .testTag("youtube_video_list"),
-      verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-      items(videos, key = { it.videoId }) { video ->
-        Surface(
-          modifier = Modifier
-            .fillMaxWidth()
-            .height(64.dp)
-            .clickable { onPlay(video.videoId, video.title) }
-            .testTag("youtube_video_${video.videoId}"),
-          shape = RoundedCornerShape(14.dp),
-          color = Color.White,
-          shadowElevation = 2.dp,
-          border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE5E7EB))
-        ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-          ) {
-            Surface(
-              modifier = Modifier.size(width = 76.dp, height = 48.dp),
-              shape = RoundedCornerShape(10.dp),
-              color = Color(0xFF263238)
-            ) {
-              Box(contentAlignment = Alignment.Center) {
-                Icon(
-                  imageVector = Icons.Default.PlayCircle,
-                  contentDescription = "Play",
-                  tint = Color(0xFFFF5252),
-                  modifier = Modifier.size(30.dp)
-                )
-              }
-            }
-            Text(
-              text = video.title,
-              modifier = Modifier.weight(1f),
-              color = VibrantTimeDisplay,
-              fontSize = 16.sp,
-              fontWeight = FontWeight.SemiBold,
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis
-            )
-            Icon(
-              imageVector = Icons.Default.ChevronRight,
-              contentDescription = "Open",
-              tint = VibrantTextSecondary
-            )
-          }
-        }
-      }
-    }
-  }
-}
-
-@Composable
-fun YouTubeCompactPlayer(
-  playerManager: YouTubePlayerManager,
-  state: YouTubePlayerState,
-  onStop: () -> Unit
-) {
-  Surface(
-    modifier = Modifier
-      .fillMaxWidth()
-      .testTag("youtube_compact_player"),
-    shape = RoundedCornerShape(16.dp),
-    color = Color(0xFF202124),
-    shadowElevation = 4.dp
-  ) {
-    Column {
-      AndroidView(
-        factory = { playerManager.createPlayerWebView() },
-        modifier = Modifier
-          .fillMaxWidth()
-          .height(170.dp)
-      )
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(start = 14.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-      ) {
-        Text(
-          text = state.videoTitle ?: "YouTube",
-          modifier = Modifier.weight(1f),
-          color = Color.White,
-          fontSize = 15.sp,
-          fontWeight = FontWeight.Bold,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis
-        )
-        IconButton(
-          onClick = { if (state.isPlaying) playerManager.pauseVideo() else playerManager.playVideo() },
-          modifier = Modifier.size(42.dp)
-        ) {
-          Icon(
-            imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-            contentDescription = if (state.isPlaying) "Pause" else "Play",
-            tint = Color.White
-          )
-        }
-        IconButton(
-          onClick = onStop,
-          modifier = Modifier
-            .size(42.dp)
-            .testTag("youtube_stop_button")
-        ) {
-          Icon(Icons.Default.Close, contentDescription = "Stop", tint = Color(0xFFFF8A80))
-        }
-      }
-      if (state.isLoading) {
-        LinearProgressIndicator(
-          modifier = Modifier.fillMaxWidth(),
-          color = Color(0xFFFF5252)
-        )
       }
     }
   }
