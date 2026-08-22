@@ -200,7 +200,6 @@ class MainActivity : ComponentActivity() {
             onResetRadioSettings = {
               settingsScope.launch { radioSettingsRepository.reset() }
             },
-            radioStations = configuredStations,
             youtubeState = youtubeState,
             pendingCallTargetName = pendingCallTargetName,
             pendingCallCountdownSeconds = pendingCallCountdownSeconds,
