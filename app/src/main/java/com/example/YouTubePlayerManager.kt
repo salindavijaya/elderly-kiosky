@@ -40,9 +40,15 @@ class YouTubePlayerManager(private val context: Context) {
 
   private var webView: WebView? = null
   private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+  private var settings = YouTubeSettings()
 
   private val _playerState = MutableStateFlow(YouTubePlayerState())
   val playerState: StateFlow<YouTubePlayerState> = _playerState.asStateFlow()
+
+  fun updateSettings(settings: YouTubeSettings) {
+    this.settings = settings
+    setVolume(settings.defaultVolume)
+  }
 
   private var hasAudioFocus = false
   private var isPlaybackPausedDueToFocus = false
@@ -155,7 +161,7 @@ class YouTubePlayerManager(private val context: Context) {
     )
 
     val wv = createPlayerWebView()
-    val htmlContent = generateIFrameHtml(cleanVideoId)
+    val htmlContent = generateIFrameHtml(cleanVideoId, settings)
     wv.loadDataWithBaseURL("https://www.youtube.com", htmlContent, "text/html", "UTF-8", null)
   }
 
@@ -292,7 +298,7 @@ class YouTubePlayerManager(private val context: Context) {
   /**
    * Generates lean, responsive HTML embedding YouTube IFrame Player with auto-play.
    */
-  private fun generateIFrameHtml(videoId: String): String {
+  private fun generateIFrameHtml(videoId: String, settings: YouTubeSettings): String {
     return """
       <!DOCTYPE html>
       <html>
@@ -319,8 +325,8 @@ class YouTubePlayerManager(private val context: Context) {
               height: '100%',
               videoId: '$videoId',
               playerVars: {
-                'autoplay': 1,
-                'controls': 1,
+                'autoplay': ${if (settings.autoPlay) 1 else 0},
+                'controls': ${if (settings.showControls) 1 else 0},
                 'modestbranding': 1,
                 'rel': 0,
                 'playsinline': 1,
@@ -335,7 +341,10 @@ class YouTubePlayerManager(private val context: Context) {
           }
 
           function onPlayerReady(event) {
-            event.target.playVideo();
+            if (${settings.autoPlay}) {
+              event.target.playVideo();
+            }
+            event.target.setVolume(${settings.defaultVolume.coerceIn(0, 100)});
             if (window.AndroidBridge) {
               window.AndroidBridge.onVideoReady();
             }

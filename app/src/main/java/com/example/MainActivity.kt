@@ -29,6 +29,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -81,6 +83,7 @@ class MainActivity : ComponentActivity() {
   private lateinit var youtubePlayerManager: YouTubePlayerManager
   private lateinit var contactManager: ContactManager
   private lateinit var radioSettingsRepository: RadioSettingsRepository
+  private lateinit var youtubeSettingsRepository: YouTubeSettingsRepository
   private var configuredStationsForVoice by mutableStateOf(RadioStationPreset.defaults)
 
   // Reactive State for UI
@@ -105,6 +108,7 @@ class MainActivity : ComponentActivity() {
     voiceManager = VoiceManager(this)
     radioManager = RadioManager(this)
     radioSettingsRepository = RadioSettingsRepository(this)
+    youtubeSettingsRepository = YouTubeSettingsRepository(this)
     youtubePlayerManager = YouTubePlayerManager(this)
     contactManager = ContactManager(this)
 
@@ -137,11 +141,16 @@ class MainActivity : ComponentActivity() {
     setContent {
       val radioState by radioManager.playbackState.collectAsState()
       val configuredStations by radioSettingsRepository.stations.collectAsState(initial = RadioStationPreset.defaults)
+      val youtubeSettings by youtubeSettingsRepository.settings.collectAsState(initial = YouTubeSettings())
       val youtubeState by youtubePlayerManager.playerState.collectAsState()
       val settingsScope = rememberCoroutineScope()
 
       LaunchedEffect(configuredStations) {
         configuredStationsForVoice = configuredStations
+      }
+
+      LaunchedEffect(youtubeSettings) {
+        youtubePlayerManager.updateSettings(youtubeSettings)
       }
 
       // Request runtime permissions on startup for smooth physical device testing
@@ -199,6 +208,15 @@ class MainActivity : ComponentActivity() {
             },
             onResetRadioSettings = {
               settingsScope.launch { radioSettingsRepository.reset() }
+            },
+            youtubeSettings = youtubeSettings,
+            onSaveYouTubeSettings = { settings ->
+              settingsScope.launch {
+                youtubeSettingsRepository.save(settings)
+              }
+            },
+            onResetYouTubeSettings = {
+              settingsScope.launch { youtubeSettingsRepository.reset() }
             },
             youtubeState = youtubeState,
             pendingCallTargetName = pendingCallTargetName,
@@ -857,20 +875,28 @@ fun ScreenFillingListeningIndicator(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RadioSettingsDialog(
+private fun GeneralSettingsDialog(
   stations: List<RadioStationPreset>,
   onSave: (List<RadioStationPreset>) -> Unit,
   onReset: () -> Unit,
+  youtubeSettings: YouTubeSettings,
+  onSaveYouTubeSettings: (YouTubeSettings) -> Unit,
+  onResetYouTubeSettings: () -> Unit,
   onDismiss: () -> Unit
 ) {
   var draftStations by remember(stations) { mutableStateOf(stations) }
+  var draftYouTubeSettings by remember(youtubeSettings) { mutableStateOf(youtubeSettings) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Radio Settings") },
+    title = { Text("General Settings") },
     text = {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        Text("Radio", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         draftStations.forEachIndexed { index, station ->
           Text(station.id.replace('_', ' ').uppercase(), fontWeight = FontWeight.Bold)
           OutlinedTextField(
@@ -904,6 +930,43 @@ private fun RadioSettingsDialog(
             singleLine = true
           )
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        Text("YouTube", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text("Play videos automatically")
+          Switch(
+            checked = draftYouTubeSettings.autoPlay,
+            onCheckedChange = { enabled ->
+              draftYouTubeSettings = draftYouTubeSettings.copy(autoPlay = enabled)
+            }
+          )
+        }
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Text("Show player controls")
+          Switch(
+            checked = draftYouTubeSettings.showControls,
+            onCheckedChange = { enabled ->
+              draftYouTubeSettings = draftYouTubeSettings.copy(showControls = enabled)
+            }
+          )
+        }
+        Text("Default volume: ${draftYouTubeSettings.defaultVolume}%")
+        Slider(
+          value = draftYouTubeSettings.defaultVolume.toFloat(),
+          onValueChange = { volume ->
+            draftYouTubeSettings = draftYouTubeSettings.copy(defaultVolume = volume.toInt())
+          },
+          valueRange = 0f..100f,
+          steps = 9
+        )
         validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
       }
     },
@@ -917,6 +980,7 @@ private fun RadioSettingsDialog(
           validationError = "Enter a name, Sinhala title, and valid HTTP URL for every station."
         } else {
           onSave(draftStations)
+          onSaveYouTubeSettings(draftYouTubeSettings)
           onDismiss()
         }
       }) { Text("Save") }
@@ -925,6 +989,7 @@ private fun RadioSettingsDialog(
       Row {
         TextButton(onClick = {
           onReset()
+          onResetYouTubeSettings()
           onDismiss()
         }) { Text("Reset") }
         TextButton(onClick = onDismiss) { Text("Cancel") }
@@ -952,6 +1017,9 @@ fun KioskHomeScreen(
   onPlayRadio: (RadioStationPreset) -> Unit,
   onSaveRadioSettings: (List<RadioStationPreset>) -> Unit = {},
   onResetRadioSettings: () -> Unit = {},
+  youtubeSettings: YouTubeSettings = YouTubeSettings(),
+  onSaveYouTubeSettings: (YouTubeSettings) -> Unit = {},
+  onResetYouTubeSettings: () -> Unit = {},
   onStopRadio: () -> Unit,
   onPlayYouTube: (String, String) -> Unit,
   onStopYouTube: () -> Unit
@@ -964,7 +1032,7 @@ fun KioskHomeScreen(
   var showLogsDialog by remember { mutableStateOf(false) }
   var showAddContactDialog by remember { mutableStateOf(false) }
   var showMediaDialog by remember { mutableStateOf(false) }
-  var showRadioSettingsDialog by remember { mutableStateOf(false) }
+  var showGeneralSettingsDialog by remember { mutableStateOf(false) }
 
   val quickContacts = remember {
     mutableStateListOf(
@@ -1289,12 +1357,12 @@ fun KioskHomeScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
       ) {
         OutlinedButton(
-          onClick = { showRadioSettingsDialog = true },
+          onClick = { showGeneralSettingsDialog = true },
           modifier = Modifier.fillMaxWidth().testTag("radio_settings_button")
         ) {
           Icon(Icons.Default.Settings, contentDescription = "Settings")
           Spacer(modifier = Modifier.width(8.dp))
-          Text("Radio Settings")
+          Text("General Settings")
         }
 
         Row(
@@ -1578,12 +1646,15 @@ fun KioskHomeScreen(
     )
   }
 
-  if (showRadioSettingsDialog) {
-    RadioSettingsDialog(
+  if (showGeneralSettingsDialog) {
+    GeneralSettingsDialog(
       stations = radioStations,
       onSave = onSaveRadioSettings,
       onReset = onResetRadioSettings,
-      onDismiss = { showRadioSettingsDialog = false }
+      youtubeSettings = youtubeSettings,
+      onSaveYouTubeSettings = onSaveYouTubeSettings,
+      onResetYouTubeSettings = onResetYouTubeSettings,
+      onDismiss = { showGeneralSettingsDialog = false }
     )
   }
 
