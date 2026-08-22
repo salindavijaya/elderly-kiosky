@@ -1521,8 +1521,11 @@ fun KioskHomeScreen(
       },
       text = {
         Column(
-          modifier = Modifier.fillMaxWidth(),
-          verticalArrangement = Arrangement.spacedBy(10.dp)
+          modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 320.dp)
+            .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
           // Shraddha FM button
           Button(
@@ -1532,7 +1535,7 @@ fun KioskHomeScreen(
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().height(56.dp)
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
           ) {
             Icon(Icons.Default.Radio, contentDescription = null, tint = Color.White)
             Spacer(modifier = Modifier.width(10.dp))
@@ -1547,7 +1550,7 @@ fun KioskHomeScreen(
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B)),
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().height(56.dp)
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
           ) {
             Icon(Icons.Default.Radio, contentDescription = null, tint = Color.White)
             Spacer(modifier = Modifier.width(10.dp))
@@ -1562,11 +1565,11 @@ fun KioskHomeScreen(
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFC62828)),
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.fillMaxWidth().height(56.dp)
+            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
           ) {
             Icon(Icons.Default.PlayCircle, contentDescription = null, tint = Color.White)
             Spacer(modifier = Modifier.width(10.dp))
-            Text("මහා පිරිත් දේශනාව (YouTube)", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text("මහා පිරිත් දේශනාව", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
           }
         }
       },
@@ -2225,41 +2228,33 @@ fun YouTubeVideoOverlay(
         .align(Alignment.TopCenter),
       color = Color(0xD9000000)
     ) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-      ) {
         Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 6.dp),
           verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp)
+          horizontalArrangement = Arrangement.SpaceBetween
         ) {
           Icon(
             imageVector = Icons.Default.PlayCircle,
-            contentDescription = null,
+            contentDescription = state.videoTitle ?: "Playing YouTube video",
             tint = Color(0xFFFF5252),
             modifier = Modifier.size(24.dp)
           )
-          Text(
-            text = state.videoTitle ?: "YouTube Video",
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold
-          )
-        }
 
-        Button(
-          onClick = onClose,
-          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
-          shape = RoundedCornerShape(12.dp),
-          modifier = Modifier.testTag("close_youtube_button")
-        ) {
-          Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(18.dp))
-          Spacer(modifier = Modifier.width(6.dp))
-          Text("වසන්න (Close)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.White)
-        }
+          IconButton(
+            onClick = onClose,
+            modifier = Modifier
+              .size(44.dp)
+              .testTag("close_youtube_button")
+          ) {
+            Icon(
+              Icons.Default.Close,
+              contentDescription = "Close YouTube video",
+              tint = Color.White,
+              modifier = Modifier.size(24.dp)
+            )
+          }
       }
     }
 
@@ -2273,8 +2268,6 @@ fun YouTubeVideoOverlay(
       ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
           CircularProgressIndicator(color = Color(0xFFFF5252), strokeWidth = 4.dp)
-          Spacer(modifier = Modifier.height(12.dp))
-          Text("වීඩියෝව පූරණය වෙමින් පවතී (Loading...)", color = Color.White, fontSize = 14.sp)
         }
       }
     }

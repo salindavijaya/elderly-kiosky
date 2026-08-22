@@ -329,6 +329,8 @@ class YouTubePlayerManager(private val context: Context) {
                 'controls': ${if (settings.showControls) 1 else 0},
                 'modestbranding': 1,
                 'rel': 0,
+                'iv_load_policy': 3,
+                'cc_load_policy': 0,
                 'playsinline': 1,
                 'fs': 1
               },
