@@ -65,8 +65,8 @@ class ExampleUnitTest {
 
   @Test
   fun testRadioStationPresets() {
-    assertEquals("http://sh.shraddha.net:8000/stream", RadioManager.URL_SHRADDHA_FM)
-    assertEquals("http://lakviru.com:8000/stream", RadioManager.URL_LAKVIRU_FM)
+    assertEquals("http://sh.shraddha.net:8000/stream", RadioStationPreset.SHRADDHA_FM.streamUrl)
+    assertEquals("http://lakviru.com:8000/stream", RadioStationPreset.LAKVIRU_FM.streamUrl)
     assertEquals("ශ්‍රද්ධා ගුවන්විදුලිය", RadioStationPreset.SHRADDHA_FM.sinhalaTitle)
     assertEquals("ලක්විරු ගුවන්විදුලිය", RadioStationPreset.LAKVIRU_FM.sinhalaTitle)
   }

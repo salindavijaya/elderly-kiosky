@@ -57,6 +57,7 @@ import android.widget.FrameLayout
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.ui.theme.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -79,6 +80,8 @@ class MainActivity : ComponentActivity() {
   private lateinit var radioManager: RadioManager
   private lateinit var youtubePlayerManager: YouTubePlayerManager
   private lateinit var contactManager: ContactManager
+  private lateinit var radioSettingsRepository: RadioSettingsRepository
+  private var configuredStationsForVoice by mutableStateOf(RadioStationPreset.defaults)
 
   // Reactive State for UI
   private val kioskEventLogs = mutableStateListOf<String>()
@@ -101,6 +104,7 @@ class MainActivity : ComponentActivity() {
     // 1. Initialize Voice Orchestration, Radio, YouTube and Contact Managers
     voiceManager = VoiceManager(this)
     radioManager = RadioManager(this)
+    radioSettingsRepository = RadioSettingsRepository(this)
     youtubePlayerManager = YouTubePlayerManager(this)
     contactManager = ContactManager(this)
 
@@ -132,7 +136,13 @@ class MainActivity : ComponentActivity() {
 
     setContent {
       val radioState by radioManager.playbackState.collectAsState()
+      val configuredStations by radioSettingsRepository.stations.collectAsState(initial = RadioStationPreset.defaults)
       val youtubeState by youtubePlayerManager.playerState.collectAsState()
+      val settingsScope = rememberCoroutineScope()
+
+      LaunchedEffect(configuredStations) {
+        configuredStationsForVoice = configuredStations
+      }
 
       // Request runtime permissions on startup for smooth physical device testing
       val permissionLauncher = rememberLauncherForActivityResult(
@@ -173,6 +183,24 @@ class MainActivity : ComponentActivity() {
             eventLogs = kioskEventLogs,
             homePressCount = homePressCount,
             radioState = radioState,
+            radioStations = configuredStations,
+            onSaveRadioSettings = { stations ->
+              settingsScope.launch {
+                val activeStationId = configuredStations.firstOrNull {
+                  it.streamUrl == radioState.currentStationUrl || it.stationName == radioState.currentStationName
+                }?.id
+                radioSettingsRepository.save(stations)
+                val activeStation = stations.firstOrNull { it.id == activeStationId }
+                if (activeStation != null && (radioState.isPlaying || radioState.isBuffering)) {
+                  radioManager.stop()
+                  radioManager.playStation(activeStation)
+                }
+              }
+            },
+            onResetRadioSettings = {
+              settingsScope.launch { radioSettingsRepository.reset() }
+            },
+            radioStations = configuredStations,
             youtubeState = youtubeState,
             pendingCallTargetName = pendingCallTargetName,
             pendingCallCountdownSeconds = pendingCallCountdownSeconds,
@@ -182,12 +210,9 @@ class MainActivity : ComponentActivity() {
             onPlayRadio = { station ->
               cancelPendingCall()
               youtubePlayerManager.stop()
-              if (station == RadioStationPreset.SHRADDHA_FM) {
-                radioManager.playShraddhaFm()
-                logKioskEvent("Playing Shraddha FM (ශ්‍රද්ධා ගුවන්විදුලිය)")
-              } else {
-                radioManager.playLakviruFm()
-                logKioskEvent("Playing Lakviru FM (ලක්විරු ගුවන්විදුලිය)")
+              configuredStations.firstOrNull { it.id == station.id }?.let { configuredStation ->
+                radioManager.playStation(configuredStation)
+                logKioskEvent("Playing ${configuredStation.stationName} (${configuredStation.sinhalaTitle})")
               }
             },
             onStopRadio = {
@@ -369,16 +394,22 @@ class MainActivity : ComponentActivity() {
         val isLakviru = rawLower.contains("ලක්විරු") || rawLower.contains("lakviru")
 
         if (isLakviru) {
-          radioManager.playLakviruFm()
-          logKioskEvent("Radio Voice Trigger: Lakviru FM (ලක්විරු ගුවන්විදුලිය)")
-          voiceManager.speak("ලක්විරු ගුවන්විදුලිය ක්‍රියාත්මක කරමින් පවතී") {
-            logKioskEvent("TTS: ලක්විරු ගුවන්විදුලිය ක්‍රියාත්මක කරමින් පවතී")
+          val station = configuredStationsForVoice.firstOrNull { it.id == RadioStationPreset.LAKVIRU_ID }
+          station?.let {
+            radioManager.playStation(it)
+            logKioskEvent("Radio Voice Trigger: ${it.stationName} (${it.sinhalaTitle})")
+            voiceManager.speak("${it.sinhalaTitle} ක්‍රියාත්මක කරමින් පවතී") {
+              logKioskEvent("TTS: ${it.sinhalaTitle} ක්‍රියාත්මක කරමින් පවතී")
+            }
           }
         } else {
-          radioManager.playShraddhaFm()
-          logKioskEvent("Radio Voice Trigger: Shraddha FM (ශ්‍රද්ධා ගුවන්විදුලිය)")
-          voiceManager.speak("ශ්‍රද්ධා ගුවන්විදුලිය ක්‍රියාත්මක කරමින් පවතී") {
-            logKioskEvent("TTS: ශ්‍රද්ධා ගුවන්විදුලිය ක්‍රියාත්මක කරමින් පවතී")
+          val station = configuredStationsForVoice.firstOrNull { it.id == RadioStationPreset.SHRADDHA_ID }
+          station?.let {
+            radioManager.playStation(it)
+            logKioskEvent("Radio Voice Trigger: ${it.stationName} (${it.sinhalaTitle})")
+            voiceManager.speak("${it.sinhalaTitle} ක්‍රියාත්මක කරමින් පවතී") {
+              logKioskEvent("TTS: ${it.sinhalaTitle} ක්‍රියාත්මක කරමින් පවතී")
+            }
           }
         }
       }
@@ -825,6 +856,84 @@ fun ScreenFillingListeningIndicator(
   }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RadioSettingsDialog(
+  stations: List<RadioStationPreset>,
+  onSave: (List<RadioStationPreset>) -> Unit,
+  onReset: () -> Unit,
+  onDismiss: () -> Unit
+) {
+  var draftStations by remember(stations) { mutableStateOf(stations) }
+  var validationError by remember { mutableStateOf<String?>(null) }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Radio Settings") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        draftStations.forEachIndexed { index, station ->
+          Text(station.id.replace('_', ' ').uppercase(), fontWeight = FontWeight.Bold)
+          OutlinedTextField(
+            value = station.stationName,
+            onValueChange = { value ->
+              draftStations = draftStations.toMutableList().also {
+                it[index] = station.copy(stationName = value)
+              }
+            },
+            label = { Text("English name") },
+            singleLine = true
+          )
+          OutlinedTextField(
+            value = station.sinhalaTitle,
+            onValueChange = { value ->
+              draftStations = draftStations.toMutableList().also {
+                it[index] = station.copy(sinhalaTitle = value)
+              }
+            },
+            label = { Text("Sinhala title") },
+            singleLine = true
+          )
+          OutlinedTextField(
+            value = station.streamUrl,
+            onValueChange = { value ->
+              draftStations = draftStations.toMutableList().also {
+                it[index] = station.copy(streamUrl = value)
+              }
+            },
+            label = { Text("Stream URL") },
+            singleLine = true
+          )
+        }
+        validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+      }
+    },
+    confirmButton = {
+      TextButton(onClick = {
+        val invalid = draftStations.firstOrNull {
+          it.stationName.isBlank() || it.sinhalaTitle.isBlank() ||
+            Uri.parse(it.streamUrl).scheme !in listOf("http", "https")
+        }
+        if (invalid != null) {
+          validationError = "Enter a name, Sinhala title, and valid HTTP URL for every station."
+        } else {
+          onSave(draftStations)
+          onDismiss()
+        }
+      }) { Text("Save") }
+    },
+    dismissButton = {
+      Row {
+        TextButton(onClick = {
+          onReset()
+          onDismiss()
+        }) { Text("Reset") }
+        TextButton(onClick = onDismiss) { Text("Cancel") }
+      }
+    }
+  )
+}
+
 /**
  * Main Kiosk UI Composable styled with the "Vibrant Palette" design.
  */
@@ -834,6 +943,7 @@ fun KioskHomeScreen(
   eventLogs: List<String>,
   homePressCount: Int,
   radioState: RadioPlaybackState,
+  radioStations: List<RadioStationPreset> = RadioStationPreset.defaults,
   youtubeState: YouTubePlayerState,
   pendingCallTargetName: String? = null,
   pendingCallCountdownSeconds: Int = 0,
@@ -841,6 +951,8 @@ fun KioskHomeScreen(
   onLogEvent: (String) -> Unit,
   onTriggerVoice: () -> Unit,
   onPlayRadio: (RadioStationPreset) -> Unit,
+  onSaveRadioSettings: (List<RadioStationPreset>) -> Unit = {},
+  onResetRadioSettings: () -> Unit = {},
   onStopRadio: () -> Unit,
   onPlayYouTube: (String, String) -> Unit,
   onStopYouTube: () -> Unit
@@ -853,6 +965,7 @@ fun KioskHomeScreen(
   var showLogsDialog by remember { mutableStateOf(false) }
   var showAddContactDialog by remember { mutableStateOf(false) }
   var showMediaDialog by remember { mutableStateOf(false) }
+  var showRadioSettingsDialog by remember { mutableStateOf(false) }
 
   val quickContacts = remember {
     mutableStateListOf(
@@ -1108,10 +1221,13 @@ fun KioskHomeScreen(
           state = radioState,
           onStop = onStopRadio,
           onSwitchPreset = {
-            if (radioState.currentStationName == RadioStationPreset.SHRADDHA_FM.stationName) {
-              onPlayRadio(RadioStationPreset.LAKVIRU_FM)
+            val currentIndex = radioStations.indexOfFirst {
+              it.stationName == radioState.currentStationName
+            }
+            if (currentIndex >= 0 && radioStations.isNotEmpty()) {
+              onPlayRadio(radioStations[(currentIndex + 1) % radioStations.size])
             } else {
-              onPlayRadio(RadioStationPreset.SHRADDHA_FM)
+              onPlayRadio(radioStations.firstOrNull() ?: RadioStationPreset.SHRADDHA_FM)
             }
           }
         )
@@ -1173,6 +1289,15 @@ fun KioskHomeScreen(
           .weight(1f),
         verticalArrangement = Arrangement.spacedBy(12.dp)
       ) {
+        OutlinedButton(
+          onClick = { showRadioSettingsDialog = true },
+          modifier = Modifier.fillMaxWidth().testTag("radio_settings_button")
+        ) {
+          Icon(Icons.Default.Settings, contentDescription = "Settings")
+          Spacer(modifier = Modifier.width(8.dp))
+          Text("Radio Settings")
+        }
+
         Row(
           modifier = Modifier
             .fillMaxWidth()
@@ -1336,7 +1461,7 @@ fun KioskHomeScreen(
           Button(
             onClick = {
               showMediaDialog = false
-              onPlayRadio(RadioStationPreset.SHRADDHA_FM)
+              onPlayRadio(radioStations.firstOrNull { it.id == RadioStationPreset.SHRADDHA_ID } ?: RadioStationPreset.SHRADDHA_FM)
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
             shape = RoundedCornerShape(16.dp),
@@ -1344,14 +1469,14 @@ fun KioskHomeScreen(
           ) {
             Icon(Icons.Default.Radio, contentDescription = null, tint = Color.White)
             Spacer(modifier = Modifier.width(10.dp))
-            Text("ශ්‍රද්ධා FM (Shraddha Radio)", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(radioStations.firstOrNull { it.id == RadioStationPreset.SHRADDHA_ID }?.stationName ?: "Shraddha FM", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
           }
 
           // Lakviru FM button
           Button(
             onClick = {
               showMediaDialog = false
-              onPlayRadio(RadioStationPreset.LAKVIRU_FM)
+              onPlayRadio(radioStations.firstOrNull { it.id == RadioStationPreset.LAKVIRU_ID } ?: RadioStationPreset.LAKVIRU_FM)
             },
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B)),
             shape = RoundedCornerShape(16.dp),
@@ -1359,7 +1484,7 @@ fun KioskHomeScreen(
           ) {
             Icon(Icons.Default.Radio, contentDescription = null, tint = Color.White)
             Spacer(modifier = Modifier.width(10.dp))
-            Text("ලක්විරු FM (Lakviru Radio)", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(radioStations.firstOrNull { it.id == RadioStationPreset.LAKVIRU_ID }?.stationName ?: "Lakviru FM", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
           }
 
           // YouTube Pirith / Bana Video button
@@ -1451,6 +1576,15 @@ fun KioskHomeScreen(
           Text("Cancel", fontSize = 15.sp, color = VibrantTextSecondary)
         }
       }
+    )
+  }
+
+  if (showRadioSettingsDialog) {
+    RadioSettingsDialog(
+      stations = radioStations,
+      onSave = onSaveRadioSettings,
+      onReset = onResetRadioSettings,
+      onDismiss = { showRadioSettingsDialog = false }
     )
   }
 

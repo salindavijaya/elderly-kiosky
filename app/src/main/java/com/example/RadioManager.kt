@@ -17,26 +17,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/**
- * Pre-configured Sinhala Buddhist / News Radio Stations.
- */
-enum class RadioStationPreset(
-  val stationName: String,
-  val streamUrl: String,
-  val sinhalaTitle: String
-) {
-  SHRADDHA_FM(
-    stationName = "Shraddha FM",
-    streamUrl = "http://sh.shraddha.net:8000/stream",
-    sinhalaTitle = "ශ්‍රද්ධා ගුවන්විදුලිය"
-  ),
-  LAKVIRU_FM(
-    stationName = "Lakviru FM",
-    streamUrl = "http://lakviru.com:8000/stream",
-    sinhalaTitle = "ලක්විරු ගුවන්විදුලිය"
-  )
-}
-
 data class RadioPlaybackState(
   val isPlaying: Boolean = false,
   val isBuffering: Boolean = false,
@@ -57,9 +37,6 @@ class RadioManager(private val context: Context) : Player.Listener {
     const val DEFAULT_DUCK_VOLUME = 0.2f
     const val NORMAL_VOLUME = 1.0f
 
-    // Station URL Constants
-    const val URL_SHRADDHA_FM = "http://sh.shraddha.net:8000/stream"
-    const val URL_LAKVIRU_FM = "http://lakviru.com:8000/stream"
   }
 
   private var exoPlayer: ExoPlayer? = null
@@ -169,12 +146,9 @@ class RadioManager(private val context: Context) : Player.Listener {
    * Plays a radio station by stream URL.
    * Handles ExoPlayer preparation, MediaItem creation, and audio focus request.
    */
-  fun playStation(url: String, stationName: String? = null) {
-    val resolvedName = stationName ?: when (url) {
-      URL_SHRADDHA_FM -> RadioStationPreset.SHRADDHA_FM.stationName
-      URL_LAKVIRU_FM -> RadioStationPreset.LAKVIRU_FM.stationName
-      else -> "Online Radio"
-    }
+  fun playStation(station: RadioStationPreset) {
+    val url = station.streamUrl
+    val resolvedName = station.stationName
 
     Log.d(TAG, "playStation() requested: $resolvedName ($url)")
 
@@ -209,20 +183,6 @@ class RadioManager(private val context: Context) : Player.Listener {
         errorMessage = "Error playing radio: ${e.message}"
       )
     }
-  }
-
-  /**
-   * Plays Shraddha FM using pre-configured URL.
-   */
-  fun playShraddhaFm() {
-    playStation(URL_SHRADDHA_FM, RadioStationPreset.SHRADDHA_FM.stationName)
-  }
-
-  /**
-   * Plays Lakviru FM using pre-configured URL.
-   */
-  fun playLakviruFm() {
-    playStation(URL_LAKVIRU_FM, RadioStationPreset.LAKVIRU_FM.stationName)
   }
 
   /**
